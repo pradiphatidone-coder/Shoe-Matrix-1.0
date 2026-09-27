@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shoe Matrix v2 — แก้ไขแล้ว</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans+Thai:wght@300;400;500;600&display=swap');
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: 'IBM Plex Sans Thai', sans-serif;
+    padding: 14px;
+  }
+  h1 { font-family: 'Space Grotesk', sans-serif; font-size: 1.15rem; margin: 0 0 2px; color: #fff; }
+  .sub { font-size: 0.72rem; color: #7d8590; margin-bottom: 12px; }
+  .badge { display:inline-block; font-size: 0.62rem; padding: 2px 7px; border-radius: 4px; background: #1f6feb22; color: #58a6ff; border: 1px solid #1f6feb44; margin-left: 6px; }
+  .badge.fix { background: #23863622; color: #3fb950; border-color: #23863644; }
+
+  .controls { display:flex; flex-wrap:wrap; gap: 6px; margin-bottom: 10px; }
+  .btn {
+    font-family: inherit; font-size: 0.72rem; padding: 6px 11px; border-radius: 7px;
+    border: 1px solid #30363d; background: #161b22; color: #c9d1d9; cursor: pointer;
+  }
+  .btn.active { background: #fff; color: #0d1117; border-color: #fff; font-weight: 600; }
+  #search {
+    font-family: inherit; font-size: 0.75rem; background: #161b22; border: 1px solid #30363d;
+    border-radius: 7px; padding: 7px 10px; color: #fff; width: 100%; margin-bottom: 10px;
+  }
+  #search::placeholder { color: #6e7681; }
+
+  .chart-wrap { background: #010409; border: 1px solid #21262d; border-radius: 12px; padding: 8px; height: 400px; position: relative; }
+
+  .card {
+    background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 14px; margin-top: 10px;
+  }
+  .card-top { display:flex; justify-content: space-between; align-items:flex-start; border-bottom: 1px solid #21262d; padding-bottom: 10px; }
+  .card-title { font-family: 'Space Grotesk', sans-serif; font-size: 1.05rem; color: #fff; margin: 0; }
+  .card-brand { font-size: 0.68rem; color: #58a6ff; text-transform: uppercase; letter-spacing: 0.04em; }
+  .quad { font-size: 0.68rem; text-align:right; }
+  .quad .q { display:block; font-weight: 600; margin-top: 2px; }
+
+  .stats { display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+  .stat-box { background: #0d1117; border: 1px solid #21262d; border-radius: 9px; padding: 9px 11px; }
+  .stat-label { font-size: 0.62rem; color: #7d8590; }
+  .stat-val { font-size: 1.15rem; font-weight: 700; color: #f0883e; font-family: 'Space Grotesk', sans-serif; }
+  .stat-val small { font-size: 0.65rem; color: #6e7681; font-weight: 400; }
+
+  .info-row { font-size: 0.72rem; line-height: 1.55; margin-top: 4px; }
+  .info-row b { color: #c9d1d9; }
+  .pace-tag {
+    display:inline-block; margin-top: 6px; font-size: 0.68rem; padding: 3px 9px;
+    border-radius: 999px; background: #3fb95022; color: #56d364; border: 1px solid #3fb95044;
+  }
+  .src-tag {
+    display:inline-block; margin-top: 6px; margin-left: 4px; font-size: 0.62rem; padding: 3px 8px;
+    border-radius: 999px; background: #21262d; color: #8b949e;
+  }
+  .footnote { font-size: 0.66rem; color: #6e7681; text-align:center; margin-top: 10px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+  <h1>Shoe Matrix — SA × ER <span class="badge fix">v2 แก้ไขแล้ว</span></h1>
+  <div class="sub">แกน X: Shock Absorption ส้นเท้า (SA) · แกน Y: Energy Return หน้าเท้า (ER%) — จุดกลมสีตามแบรนด์</div>
+
+  <input id="search" type="text" placeholder="🔍 พิมพ์ชื่อรุ่น เช่น Nimbus, Boston, Vomero...">
+
+  <div class="controls" id="brandBtns"></div>
+
+  <div class="chart-wrap"><canvas id="chart"></canvas></div>
+
+  <div class="card" id="card"></div>
+
+  <div class="footnote" id="footnote"></div>
+
+<script>
+// ===================== DATASET (v2 — แก้ 3 จุดตามที่คุยกัน + ตัวเลข Adidas จริงจาก RunRepeat) =====================
+// pace = ช่วงเพซโดยประมาณที่รองเท้ารุ่นนี้ "รีดฟอร์ม" ได้ดีที่สุด (นาที:วินาที/กม.) — เป็นค่าอ้างอิงกว้างๆ ตาม role/foam ไม่ใช่สูตรตายตัว เพราะจริงจริงขึ้นกับตัวผู้วิ่งด้วย
+// src = "lab" (ตัวเลข SA/ER มาจากหน้ารีวิวรายรุ่น RunRepeat จริง), "chart" (มาจาก quadrant infographic เดิม, ยังไม่ตรวจ raw), "est" (ประมาณจาก category เพราะหา raw ไม่เจอ)
+const DB = [
+// ---------- ASICS ----------
+{name:"ASICS Metaspeed Ray", brand:"ASICS", sa:9.0, er:8.2, role:"Ultimate Super Shoe", pace:"3:00–3:40/km", src:"chart"},
+{name:"ASICS Metaspeed Sky Tokyo", brand:"ASICS", sa:6.2, er:7.3, role:"Stride Racer", pace:"3:20–4:00/km", src:"chart"},
+{name:"ASICS Metaspeed Edge Tokyo", brand:"ASICS", sa:5.8, er:6.7, role:"Cadence Racer", pace:"3:20–4:00/km", src:"chart"},
+{name:"ASICS Megablast", brand:"ASICS", sa:7.8, er:6.4, role:"Super Trainer Max", pace:"4:30–5:30/km", src:"chart"},
+{name:"ASICS Novablast 6", brand:"ASICS", sa:5.0, er:5.9, role:"Bounce Daily", pace:"5:00–6:00/km", src:"chart"},
+{name:"ASICS Sonicblast", brand:"ASICS", sa:6.3, er:5.8, role:"Speed Trainer", pace:"4:45–5:45/km", src:"chart"},
+{name:"ASICS GT 2000 15", brand:"ASICS", sa:4.7, er:5.3, role:"Stability Daily", pace:"5:30–6:45/km", src:"chart"},
+{name:"ASICS Superblast 3", brand:"ASICS", sa:7.4, er:5.3, role:"Long Run Master", pace:"5:00–6:15/km", src:"chart"},
+{name:"ASICS Magic Speed 5", brand:"ASICS", sa:6.4, er:4.8, role:"Tempo Carbon", pace:"4:45–5:30/km", src:"chart"},
+{name:"ASICS Glideride Max 2", brand:"ASICS", sa:4.4, er:4.4, role:"Rocker Long Run", pace:"5:30–6:30/km", src:"chart"},
+{name:"ASICS Gel Kayano 33", brand:"ASICS", sa:3.3, er:3.8, role:"Max Stability", pace:"6:00–7:30/km", src:"chart"},
+{name:"ASICS Gel Pulse 17", brand:"ASICS", sa:3.5, er:3.2, role:"Entry Cushion", pace:"6:00–7:15/km", src:"chart"},
+{name:"ASICS Gel Cumulus 28", brand:"ASICS", sa:4.3, er:2.8, role:"Neutral Daily", pace:"6:00–7:45/km", src:"chart"},
+{name:"ASICS GT 1000 15", brand:"ASICS", sa:1.9, er:2.3, role:"Budget Support", pace:"6:15–7:30/km", src:"chart"},
+{name:"ASICS Gel Nimbus 28", brand:"ASICS", sa:4.3, er:2.1, role:"Pure Max Cushion", pace:"6:30–8:30+/km", src:"chart"},
+
+// ---------- NIKE (Winflo12 / Structure26 แก้ด้วยตัวเลขจริงจาก RunRepeat) ----------
+{name:"Nike Streakfly 2", brand:"Nike", sa:2.5, er:8.0, role:"5K/10K Speed Day", pace:"3:20–4:10/km", src:"chart"},
+{name:"Nike Vaporfly 4", brand:"Nike", sa:4.2, er:7.2, role:"Marathon Racer", pace:"3:45–4:30/km", src:"chart"},
+{name:"Nike Alphafly 3", brand:"Nike", sa:5.4, er:6.9, role:"Marathon Super Shoe", pace:"3:45–4:30/km", src:"chart"},
+{name:"Nike Vomero Plus", brand:"Nike", sa:5.8, er:5.5, role:"Max Stack Cruiser", pace:"5:15–6:30/km", src:"chart"},
+{name:"Nike Zoom Fly 6", brand:"Nike", sa:5.5, er:4.7, role:"Tempo Trainer", pace:"4:45–5:45/km", src:"chart"},
+{name:"Nike Pegasus Premium", brand:"Nike", sa:7.2, er:5.2, role:"Max Bounce Daily", pace:"5:00–6:15/km", src:"chart"},
+{name:"Nike Structure Plus", brand:"Nike", sa:4.8, er:4.2, role:"Stability Daily", pace:"5:30–6:45/km", src:"chart"},
+{name:"Nike Vomero Premium", brand:"Nike", sa:8.5, er:3.5, role:"Max Comfort Cruise", pace:"6:00–8:00+/km", src:"chart"},
+{name:"Nike Winflo 12", brand:"Nike", sa:7.5, er:5.6, role:"Cheap Vomero (Max-cushion daily)", pace:"5:45–7:15/km", src:"lab"},
+{name:"Nike Pegasus 42", brand:"Nike", sa:4.2, er:2.5, role:"Daily Workhorse", pace:"5:30–7:00/km", src:"chart"},
+{name:"Nike Vomero 18", brand:"Nike", sa:6.3, er:2.4, role:"Easy Cushion", pace:"6:00–8:00+/km", src:"chart"},
+{name:"Nike Revolution 8", brand:"Nike", sa:2.8, er:2.1, role:"Entry Run / Gym", pace:"6:00–7:15/km", src:"chart"},
+{name:"Nike Structure 26", brand:"Nike", sa:7.1, er:5.3, role:"Stability Daily (Heel-biased)", pace:"5:45–7:00/km", src:"lab"},
+
+// ---------- NEW BALANCE (เพิ่ม Rebel v5 กลับเข้ามา ด้วยตัวเลขจริง) ----------
+{name:"NB SC Elite v6", brand:"New Balance", sa:6.1, er:8.3, role:"Marathon Racer", pace:"3:30–4:15/km", src:"chart"},
+{name:"NB SC Rebel", brand:"New Balance", sa:8.2, er:7.9, role:"Super Responsive", pace:"4:15–5:15/km", src:"chart"},
+{name:"NB Ellipse", brand:"New Balance", sa:5.8, er:6.6, role:"Fast Trainer", pace:"4:45–5:45/km", src:"chart"},
+{name:"NB 1080 v15", brand:"New Balance", sa:6.2, er:5.9, role:"Premium Daily", pace:"5:15–6:30/km", src:"chart"},
+{name:"NB FuelCell Rebel v5", brand:"New Balance", sa:7.8, er:6.4, role:"Springy Speed Daily", pace:"4:45–5:45/km", src:"lab"},
+{name:"NB SC Trainer v3", brand:"New Balance", sa:5.4, er:4.7, role:"Plated Trainer", pace:"5:00–6:00/km", src:"chart"},
+{name:"NB 860 v15", brand:"New Balance", sa:4.4, er:4.9, role:"Stability Daily", pace:"5:30–6:45/km", src:"chart"},
+{name:"NB More v6", brand:"New Balance", sa:6.8, er:3.2, role:"Max Cushion", pace:"6:00–8:00+/km", src:"chart"},
+{name:"NB 880 v15", brand:"New Balance", sa:3.4, er:3.4, role:"Classic Neutral", pace:"5:45–7:00/km", src:"chart"},
+{name:"NB 680 v9", brand:"New Balance", sa:3.7, er:3.9, role:"Entry Trainer", pace:"5:45–7:00/km", src:"chart"},
+{name:"NB Evoz v4", brand:"New Balance", sa:1.7, er:3.8, role:"Firm Daily", pace:"5:30–6:45/km", src:"chart"},
+{name:"NB Vongo v6", brand:"New Balance", sa:2.1, er:2.3, role:"Plush Stability", pace:"6:00–7:15/km", src:"chart"},
+
+// ---------- HOKA ----------
+{name:"HOKA Rocket X 3", brand:"HOKA", sa:6.9, er:8.4, role:"Carbon Racer", pace:"3:20–4:10/km", src:"chart"},
+{name:"HOKA Cielo X1 3.0", brand:"HOKA", sa:8.5, er:7.2, role:"Super Bounce Racer", pace:"3:40–4:30/km", src:"chart"},
+{name:"HOKA Mach X 3", brand:"HOKA", sa:6.1, er:6.1, role:"Pebax Trainer", pace:"4:45–5:45/km", src:"chart"},
+{name:"HOKA Skyward X 2", brand:"HOKA", sa:6.3, er:5.6, role:"Super Stack Trainer", pace:"5:00–6:00/km", src:"chart"},
+{name:"HOKA Mach 7", brand:"HOKA", sa:4.1, er:5.2, role:"Lightweight Tempo", pace:"5:00–6:00/km", src:"chart"},
+{name:"HOKA Bondi 9", brand:"HOKA", sa:5.7, er:4.2, role:"Ultimate Cushion", pace:"6:00–8:00+/km", src:"chart"},
+{name:"HOKA Clifton PRO", brand:"HOKA", sa:5.4, er:3.7, role:"Upgraded Daily", pace:"5:45–7:00/km", src:"chart"},
+{name:"HOKA Rincon 4", brand:"HOKA", sa:3.8, er:3.6, role:"Featherweight", pace:"5:15–6:30/km", src:"chart"},
+{name:"HOKA Arahi 9", brand:"HOKA", sa:4.3, er:2.9, role:"J-Frame Support", pace:"5:45–7:00/km", src:"chart"},
+{name:"HOKA Carbon X 3", brand:"HOKA", sa:2.0, er:2.6, role:"Endurance Carbon", pace:"4:15–5:00/km", src:"chart"},
+{name:"HOKA Gaviota 6", brand:"HOKA", sa:2.8, er:2.1, role:"Max Stability", pace:"6:00–7:15/km", src:"chart"},
+{name:"HOKA Clifton 11", brand:"HOKA", sa:5.6, er:1.8, role:"Everyday Balance", pace:"6:00–7:45/km", src:"chart"},
+
+// ---------- ADIDAS (ทั้งหมดคำนวณจากตัวเลข RunRepeat จริง — ไม่ใช้แกน Firm/Soft เดิมอีกต่อไป) ----------
+{name:"Adidas Adizero Adios Pro Evo 3", brand:"Adidas", sa:8.3, er:9.4, role:"Sub-2 Marathon Super Shoe", pace:"2:50–3:30/km", src:"lab", raw:"153 SA / 80.2% ER"},
+{name:"Adidas Adizero Adios Pro 4", brand:"Adidas", sa:7.7, er:9.5, role:"Marathon Racer", pace:"3:15–4:00/km", src:"lab", raw:"142 SA / 80.3% ER"},
+{name:"Adidas Adizero Prime X3 STRUNG", brand:"Adidas", sa:8.6, er:8.7, role:"Super Stack Long-Run Racer", pace:"3:45–4:45/km", src:"lab", raw:"160 SA / 76.7% ER"},
+{name:"Adidas Adizero EVO SL", brand:"Adidas", sa:7.9, er:7.5, role:"Speed Super Trainer", pace:"4:15–5:15/km", src:"lab", raw:"147 SA / 70.3% ER"},
+{name:"Adidas Hyperboost Edge", brand:"Adidas", sa:8.3, er:8.1, role:"Max-cushion Super Trainer", pace:"4:45–6:00/km", src:"lab", raw:"154 SA / 73.6%* (*ค่า ER เป็นของส้นเท้า ไม่พบข้อมูลหน้าเท้า)"},
+{name:"Adidas Adizero Boston 13", brand:"Adidas", sa:6.8, er:7.3, role:"Tempo / Fast Cruiser", pace:"4:30–5:30/km", src:"lab", raw:"127 SA / 69.7% ER"},
+{name:"Adidas Ultraboost 5X", brand:"Adidas", sa:7.0, er:7.4, role:"Comfort Cruiser", pace:"5:15–6:45/km", src:"lab", raw:"129 SA / 70.1% ER"},
+{name:"Adidas Supernova Rise 3", brand:"Adidas", sa:7.6, er:6.0, role:"Daily Comfort Cushion", pace:"5:30–7:00/km", src:"lab", raw:"140 SA / 62.8% ER"},
+{name:"Adidas Adizero SL2", brand:"Adidas", sa:4.8, er:3.5, role:"Daily Speed Workhorse", pace:"5:00–6:00/km", src:"est"},
+{name:"Adidas Duramo Speed 2", brand:"Adidas", sa:4.0, er:3.0, role:"Budget Fast Trainer", pace:"5:15–6:15/km", src:"est"},
+{name:"Adidas Runfalcon 5", brand:"Adidas", sa:3.6, er:1.9, role:"Entry Daily / Gym", pace:"6:00–7:15/km", src:"est"},
+];
+
+const BRAND_COLOR = {
+  "Nike": "#e5484d", "ASICS": "#409eff", "New Balance": "#e6779e",
+  "HOKA": "#f0883e", "Adidas": "#00c2c7"
+};
+
+let chart, highlighted = null, activeBrand = "all";
+
+function quadrantOf(s){
+  if (s.sa>=5 && s.er>=5) return {t:"Top-Right (High SA / High ER)", c:"#3fb950"};
+  if (s.sa<5 && s.er>=5) return {t:"Top-Left (Low SA / High ER)", c:"#a5a5ff"};
+  if (s.sa>=5 && s.er<5) return {t:"Bottom-Right (High SA / Low ER)", c:"#f0883e"};
+  return {t:"Bottom-Left (Low SA / Low ER)", c:"#e5484d"};
+}
+
+function renderCard(s){
+  const q = quadrantOf(s);
+  const srcLabel = s.src === "lab" ? "✅ ตัวเลขจริงจาก RunRepeat lab"
+                 : s.src === "est" ? "⚠️ ประมาณการ (ไม่พบข้อมูล lab)"
+                 : "จากกราฟ quadrant เดิม";
+  document.getElementById('card').innerHTML = `
+    <div class="card-top">
+      <div>
+        <div class="card-brand" style="color:${BRAND_COLOR[s.brand]}">${s.brand}</div>
+        <h2 class="card-title">${s.name}</h2>
+      </div>
+      <div class="quad"><span style="color:#7d8590">ตำแหน่ง</span><span class="q" style="color:${q.c}">${q.t}</span></div>
+    </div>
+    <div class="stats">
+      <div class="stat-box"><div class="stat-label">Shock Absorption (SA)</div><div class="stat-val">${s.sa.toFixed(1)}<small> /10</small></div></div>
+      <div class="stat-box"><div class="stat-label">Energy Return (ER)</div><div class="stat-val">${s.er.toFixed(1)}<small> /10</small></div></div>
+    </div>
+    <div class="info-row"><b>รูปแบบการใช้งาน:</b> ${s.role}</div>
+    <div class="pace-tag">🏃 เพซที่รีดฟอร์มได้ดี: ${s.pace}</div>
+    <div class="src-tag">${srcLabel}${s.raw ? " — " + s.raw : ""}</div>
+  `;
+}
+
+function buildDatasets(){
+  const brands = [...new Set(DB.map(s=>s.brand))];
+  return brands.map(b => ({
+    label: b,
+    data: DB.filter(s=>s.brand===b).map(s => ({x:s.sa, y:s.er, raw:s})),
+    backgroundColor: BRAND_COLOR[b],
+    borderColor: "#0d1117",
+    borderWidth: 1,
+    pointRadius: ctx => (highlighted === ctx.raw?.raw?.name ? 11 : 5.5),
+    pointHoverRadius: 8,
+    hidden: activeBrand !== "all" && activeBrand !== b
+  }));
+}
+
+function initChart(){
+  const ctx = document.getElementById('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'scatter',
+    data: { datasets: buildDatasets() },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 200 },
+      scales: {
+        x: { min:1, max:10, title:{display:true, text:'Shock Absorption (SA) →', color:'#f0883e', font:{size:10}}, grid:{color:'#21262d'}, ticks:{color:'#6e7681', font:{size:9}} },
+        y: { min:1, max:10, title:{display:true, text:'Energy Return (ER%) →', color:'#f0883e', font:{size:10}}, grid:{color:'#21262d'}, ticks:{color:'#6e7681', font:{size:9}} }
+      },
+      plugins: {
+        legend: { position:'top', labels:{color:'#c9d1d9', font:{size:10}, boxWidth:8, usePointStyle:true} },
+        tooltip: {
+          backgroundColor:'#161b22', borderColor:'#30363d', borderWidth:1, padding:8,
+          titleColor:'#fff', bodyColor:'#c9d1d9',
+          callbacks: {
+            title: items => items[0].raw.raw.name,
+            label: item => `${item.raw.raw.role} | เพซ ${item.raw.raw.pace}`
+          }
+        }
+      },
+      onClick: (e, els) => {
+        if (els.length){
+          const s = chart.data.datasets[els[0].datasetIndex].data[els[0].index].raw;
+          highlighted = s.name; renderCard(s); chart.update();
+        }
+      }
+    }
+  });
+}
+
+function setupBrandButtons(){
+  const brands = [...new Set(DB.map(s=>s.brand))];
+  const wrap = document.getElementById('brandBtns');
+  wrap.innerHTML = `<button class="btn active" data-b="all">ทั้งหมด (${DB.length})</button>` +
+    brands.map(b => `<button class="btn" data-b="${b}">${b} (${DB.filter(s=>s.brand===b).length})</button>`).join('');
+  wrap.querySelectorAll('.btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeBrand = btn.dataset.b;
+      wrap.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      chart.data.datasets = buildDatasets();
+      chart.update();
+    });
+  });
+}
+
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase().trim();
+  if (!q) { highlighted = null; chart.update(); return; }
+  const m = DB.find(s => s.name.toLowerCase().includes(q));
+  if (m) {
+    highlighted = m.name; renderCard(m);
+    if (activeBrand !== 'all' && activeBrand !== m.brand){
+      activeBrand = 'all';
+      document.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));
+      document.querySelector('.btn[data-b="all"]').classList.add('active');
+      chart.data.datasets = buildDatasets();
+    }
+    chart.update();
+  }
+});
+
+document.getElementById('footnote').innerHTML =
+  "🟢 = แก้แล้วด้วยข้อมูลจริง: NB FuelCell Rebel v5 (เพิ่มกลับเข้ามา), Nike Winflo 12 / Structure 26 (แก้ตำแหน่งด้วยตัวเลข lab จริง — พบว่า Winflo 12 SA จริงสูงกว่า Structure 26)<br>" +
+  "🔵 = Adidas ทั้งหมดคำนวณใหม่จากตัวเลข SA/ER จริงในหน้ารีวิวรายรุ่น RunRepeat (ไม่ใช้แกน Firm/Soft-Training/Racing เดิมอีกต่อไป) — 8 คู่ยืนยันจาก lab, 3 คู่ (SL2 / Duramo Speed 2 / Runfalcon 5) เป็นค่าประมาณเพราะหาตัวเลข lab ไม่เจอ<br>" +
+  "⚪ เพซที่แสดงเป็นช่วงอ้างอิงกว้างๆ ตาม role/foam ของรองเท้า ไม่ใช่สูตรตายตัว — ความเร็วจริงต่างกันตามน้ำหนักตัวและฟอร์มวิ่งของแต่ละคน";
+
+initChart();
+setupBrandButtons();
+renderCard(DB[0]);
+</script>
+</body>
+</html>
